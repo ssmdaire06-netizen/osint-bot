@@ -168,25 +168,41 @@ async def email_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-
+#----------------------------------------------------
+# YENİ USERNAME FONKSİYONU (Sherlock) - GENİŞ LİSTE
+#----------------------------------------------------
 async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:  # <-- 'try' burada başlıyor
-        # --- BU BLOK 'try' İÇİNDE (GİRİNTİLİ) ---
+    try:
         username = context.args[0]
         
-        await update.message.reply_text(f"🔍 {username} için 300+ sitede kullanıcı adı aranıyor... Bu işlem 5 dakikaya kadar sürebilir. Lütfen sabırla bekleyin.")
+        await update.message.reply_text(f"🔍 {username} için seçili sitelerde kullanıcı adı aranıyor... Bu işlem 1-2 dakika sürebilir, lütfen bekleyin.")
 
         # Sherlock komutunun venv içindeki tam yolunu bul
-        # BU SATIRLARIN GİRİNTİSİ ÇOK ÖNEMLİ
         venv_bin_dir = os.path.dirname(sys.executable)
         sherlock_command_path = os.path.join(venv_bin_dir, 'sherlock')
 
         # Sherlock'u 'sherlock' olarak değil, tam yoluyla çağır
+        # SADECE SEÇTİĞİMİZ POPÜLER SİTELERDE ARASIN (Genişletilmiş Liste)
         proc = await asyncio.create_subprocess_exec(
-            sherlock_command_path,  # <-- 'sherlock' YERİNE BU DEĞİŞKENİ KULLAN
+            sherlock_command_path,
             username,
             '--json',
             '-',
+            '--site', 'reddit',
+            '--site', 'instagram',
+            '--site', 'facebook',
+            '--site', 'linkedin',
+            '--site', 'youtube',
+            '--site', 'pinterest',
+            '--site', 'tiktok',
+            '--site', 'twitter',      # (X için)
+            '--site', 'snapchat',
+            '--site', 'twitch',
+            '--site', 'tinder',
+            '--site', 'vk',
+            '--site', 'ebay',
+            '--site', 'amazon',
+            '--site', 'spotify',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -195,21 +211,40 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stdout_data, stderr_data = await proc.communicate()
 
         if proc.returncode == 0:
-            # ... (geri kalan if/else bloğu, hepsi girintili olmalı)
-            # ...
-            pass # (Kodunuzun geri kalanı)
-        else:
-            # ... (geri kalan else bloğu, hepsi girintili olmalı)
-            pass # (Kodunuzun geri kalanı)
-        
-        # ... (Tüm try bloğu burada bitiyor)
+            # Başarılı
+            try:
+                # JSON çıktısını işle
+                # Sherlock bazen JSON olmayan satırlar basabilir, sadece JSON kısmını al
+                json_output = stdout_data.decode().split('{', 1)[1].rsplit('}', 1)[0]
+                results = json.loads("{" + json_output + "}")
+                
+                found_accounts = []
+                for site, data in results.items():
+                    if data.get("status") == "claimed": # 'claimed' (bulundu) olanları al
+                        found_accounts.append(f"{site}: {data.get('url')}")
+                
+                if found_accounts:
+                    mesaj = f"✅ **Bulunan Hesaplar ({username}):**\n\n"
+                    # Listeyi alt alta güzelce sırala
+                    mesaj += "\n".join(found_accounts)
+                else:
+                    mesaj = f"ℹ️ **Sonuç Bulunamadı**\n\n`{username}` adı için bilinen sitelerde hesap bulunamadı."
+                        
+            except (json.JSONDecodeError, IndexError):
+                mesaj = "Hata: Sherlock'tan gelen JSON verisi işlenemedi."
+                print(f"Sherlock JSON Hatası: {stdout_data.decode()}")
 
-    except IndexError: # <-- 'except' bloğu 'try' ile aynı hizada
+        else:
+            # Sherlock hata verdi
+            mesaj = f"Hata: Sherlock aracı çalıştırılamadı.\n{stderr_data.decode()}"
+
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
+
+    except IndexError:
         await update.message.reply_text("Kullanım: /username <kullaniciadi>")
-    except Exception as e: # <-- Bu da 'try' ile aynı hizada
+    except Exception as e:
         print(f"Sherlock genel hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
-
 
 
 
