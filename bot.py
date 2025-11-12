@@ -8,12 +8,14 @@ import datetime
 import asyncio
 import json 
 import sys
+import base64
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 IPINFO_API_TOKEN = os.environ.get("IPINFO_API_TOKEN")
+VT_API_TOKEN = os.environ.get("VT_API_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Merhaba! Ben OSINT botuyum. /ip <adres> komutu ile sorgulama yapabilirsiniz.")
@@ -249,28 +251,100 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+#----------------------------------------------------
+# YENİ URL SORGULAMA FONKSİYONU (VirusTotal)
+#----------------------------------------------------
+async def url_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        url = context.args[0]
+        
+        if not VT_API_TOKEN:
+            await update.message.reply_text("Hata: Sunucu tarafında VT_API_TOKEN ayarlanmamış.")
+            return
+
+        await update.message.reply_text(f"🔍 {url} VirusTotal'da analiz ediliyor... Lütfen bekleyin.")
+
+        # VT API v3, URL'nin base64 enkodlanmış halini 'id' olarak kullanır
+        url_id = base64.urlsafe_b64encode(url.encode()).decode().strip("=")
+        api_url = f"https://www.virustotal.com/api/v3/urls/{url_id}"
+        
+        headers = {"x-apikey": VT_API_TOKEN}
+        
+        try:
+            response = requests.get(api_url, headers=headers)
+        except requests.exceptions.RequestException as e:
+            await update.message.reply_text(f"API bağlantı hatası: {e}")
+            return
+
+        mesaj = ""
+        if response.status_code == 200:
+            data = response.json().get("data", {}).get("attributes", {})
+            stats = data.get("last_analysis_stats", {})
+            malicious = stats.get("malicious", 0)
+            suspicious = stats.get("suspicious", 0)
+            harmless = stats.get("harmless", 0)
+            
+            sonuc_text = "Bilinmiyor"
+            if malicious > 0:
+                sonuc_text = f"❌ ZARARLI ({malicious} motor)"
+            elif suspicious > 0:
+                sonuc_text = f"⚠️ ŞÜPHELİ ({suspicious} motor)"
+            elif harmless > 0:
+                sonuc_text = f"✅ GÜVENLİ ({harmless} motor)"
+
+            mesaj = f"**VirusTotal Raporu ({url})**\n\n"
+            mesaj += f"**Sonuç: {sonuc_text}**\n\n"
+            mesaj += f"Zararlı: {malicious}\n"
+            mesaj += f"Şüpheli: {suspicious}\n"
+            mesaj += f"Güvenli: {harmless}\n"
+            
+            first_seen = data.get("first_submission_date")
+            if first_seen:
+                mesaj += f"\nİlk Görülme: {datetime.datetime.fromtimestamp(first_seen).strftime('%Y-%m-%d')}"
+
+        elif response.status_code == 404:
+            mesaj = "ℹ️ Bu URL VirusTotal veritabanında bulunamadı. (Daha önce taranmamış olabilir)."
+        elif response.status_code == 401:
+            mesaj = "API Hatası: VirusTotal API Token'ı geçersiz veya yetkisiz."
+        else:
+            mesaj = f"API Hatası: {response.status_code} - {response.text}"
+
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
+
+    except IndexError:
+        await update.message.reply_text("Kullanım: /url <https://ornek.com>")
+    except Exception as e:
+        print(f"URL Sorgulama Hatası: {str(e)}")
+        await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
+
+
+
 # ... (tüm diğer /username fonksiyonunuz burada bitiyor) ...
 
 
 # --------------------------------------------
 # BU FONKSİYONUN TAMAMI EN SOLDA (GİRİNTİSİZ) OLMALI
 # --------------------------------------------
+#----------------------------------------------------
+# BOT BAŞLADIĞINDA MENÜYÜ AYARLAYAN FONKSİYON
+#----------------------------------------------------
 async def post_init(application: Application):
     """Bot başladığında komut menüsünü ayarlar."""
     
-    # BU SATIRLAR 4 BOŞLUK İÇERİDE
+    # BU SATIR 4 BOŞLUK İÇERİDE
     commands = [
         BotCommand("start", "Botu başlatır ve merhaba der"),
         BotCommand("ip", "IP adresi sorgular (Örn: /ip 8.8.8.8)"),
         BotCommand("domain", "Domain sorgular (Örn: /domain google.com)"),
         BotCommand("email", "Email ile hesap arar (Örn: /email test@test.com)"),
-        BotCommand("username", "Kullanıcı adı arar (Örn: /username test)")
+        BotCommand("username", "Kullanıcı adı arar (Örn: /username test)"),
+        BotCommand("ara", "Özel veritabanında arama yapar (Örn: /ara Ahmet)"),
+        BotCommand("url", "URL'yi VirusTotal'da tarar (Örn: /url site.com)")
     ]
     
-    # BU SATIR DA 4 BOŞLUK İÇERİDE
+    # BU SATIR DA 4 BOŞLUK İÇERİDE VE 'commands' İLE AYNI HİZADA OLMALI
     await application.bot.set_my_commands(commands)
-
-
 # --------------------------------------------
 # BU FONKSİYON DA EN SOLDA (GİRİNTİSİZ) OLMALI
 # --------------------------------------------
@@ -283,6 +357,8 @@ def main():
     application.add_handler(CommandHandler("domain", domain_sorgula))
     application.add_handler(CommandHandler("email", email_sorgula))
     application.add_handler(CommandHandler("username", username_sorgula))
+    application.add_handler(CommandHandler("url", url_sorgula))
+
 
     print("Bot çalışıyor... (Durdurmak için CTRL+C)")
     application.run_polling()
