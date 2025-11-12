@@ -79,9 +79,12 @@ async def ip_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"API hatası: {response.status_code}")
             
     except IndexError:
-        await update.message.reply_text("Kullanım: /ip <IP_ADRESI>")
+        await update.message.reply_text("Kullanım: /ip IP_ADRESİ")
     except Exception as e:
         await update.message.reply_text(f"Bir hata oluştu: {str(e)}")
+
+
+
 
 
 async def domain_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -146,7 +149,7 @@ async def domain_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /domain <domain.com>")
+        await update.message.reply_text("Kullanım: /domain domain.com")
     except Exception as e:
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
 
@@ -197,7 +200,7 @@ async def email_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /email <email@adres.com>")
+        await update.message.reply_text("Kullanım: /email email@adres.com")
     except Exception as e:
         print(f"holehe genel hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -279,7 +282,7 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /username <kullaniciadi>")
+        await update.message.reply_text("Kullanım: /username kullaniciadi")
     except Exception as e:
         print(f"Sherlock genel hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -349,7 +352,7 @@ async def url_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /url <https://ornek.com>")
+        await update.message.reply_text("Kullanım: /url https://ornek.com")
     except Exception as e:
         print(f"URL Sorgulama Hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
