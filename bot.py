@@ -10,6 +10,9 @@ import json
 import sys
 import base64
 from telegram import Update, BotCommand
+import io
+from PIL import Image, ExifTags
+from telegram.ext import MessageHandler, filters
 from telegram.ext import Application, CommandHandler, ContextTypes
 
 
@@ -47,7 +50,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     mesaj += "🎣 `/url <https://link.com>`\n"
     mesaj += "   _URL/Link Güvenlik Kontrolü (VirusTotal)_\n\n"
-    
+
+    mesaj += "📸 `(Bana bir fotoğraf gönderin)`\n"
+    mesaj += "   _Fotoğrafın gizli meta (EXIF) verilerini analiz ederim._\n\n"
+
     mesaj += "Tüm komutları görmek için / tuşuna basmanız yeterli."
 
     # Görsellik (Markdown) için parse_mode'u ekliyoruz
@@ -210,40 +216,30 @@ async def email_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 #----------------------------------------------------
-# YENİ USERNAME FONKSİYONU (Sherlock) - GENİŞ LİSTE
+#----------------------------------------------------
+#----------------------------------------------------
+# USERNAME FONKSİYONU (GÜNCELLENMİŞ 4 SİTELİK HIZLI LİSTE)
 #----------------------------------------------------
 async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         username = context.args[0]
         
-        await update.message.reply_text(f"🔍 {username} için seçili sitelerde kullanıcı adı aranıyor... Bu işlem 1-2 dakika sürebilir, lütfen bekleyin.")
+        await update.message.reply_text(f"🔍 {username} için 4 popüler sitede kullanıcı adı aranıyor... Lütfen bekleyin.")
 
         # Sherlock komutunun venv içindeki tam yolunu bul
         venv_bin_dir = os.path.dirname(sys.executable)
         sherlock_command_path = os.path.join(venv_bin_dir, 'sherlock')
 
-        # Sherlock'u 'sherlock' olarak değil, tam yoluyla çağır
-        # SADECE SEÇTİĞİMİZ POPÜLER SİTELERDE ARASIN (Genişletilmiş Liste)
+        # 4 sitelik güncellenmiş stabil liste
         proc = await asyncio.create_subprocess_exec(
             sherlock_command_path,
             username,
             '--json',
             '-',
-            '--site', 'reddit',
-            '--site', 'instagram',
-            '--site', 'facebook',
-            '--site', 'linkedin',
-            '--site', 'youtube',
-            '--site', 'pinterest',
+            '--site', 'twitter',  # X
             '--site', 'tiktok',
-            '--site', 'twitter',      # (X için)
-            '--site', 'snapchat',
-            '--site', 'twitch',
-            '--site', 'tinder',
-            '--site', 'vk',
-            '--site', 'ebay',
-            '--site', 'amazon',
-            '--site', 'spotify',
+            '--site', 'reddit',
+            '--site', 'telegram',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
@@ -255,7 +251,6 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Başarılı
             try:
                 # JSON çıktısını işle
-                # Sherlock bazen JSON olmayan satırlar basabilir, sadece JSON kısmını al
                 json_output = stdout_data.decode().split('{', 1)[1].rsplit('}', 1)[0]
                 results = json.loads("{" + json_output + "}")
                 
@@ -266,10 +261,9 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 if found_accounts:
                     mesaj = f"✅ **Bulunan Hesaplar ({username}):**\n\n"
-                    # Listeyi alt alta güzelce sırala
                     mesaj += "\n".join(found_accounts)
                 else:
-                    mesaj = f"ℹ️ **Sonuç Bulunamadı**\n\n`{username}` adı için bilinen sitelerde hesap bulunamadı."
+                    mesaj = f"ℹ️ **Sonuç Bulunamadı**\n\n`{username}` adı için bu 4 popüler sitede hesap bulunamadı."
                         
             except (json.JSONDecodeError, IndexError):
                 mesaj = "Hata: Sherlock'tan gelen JSON verisi işlenemedi."
@@ -282,13 +276,10 @@ async def username_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /username kullaniciadi")
+        await update.message.reply_text("Kullanım: /username <kullaniciadi>")
     except Exception as e:
         print(f"Sherlock genel hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
-
-
-
 
 
 #----------------------------------------------------
@@ -362,6 +353,118 @@ async def url_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ... (tüm diğer /username fonksiyonunuz burada bitiyor) ...
 
 
+
+#----------------------------------------------------
+# YARDIMCI: GPS Verisini Decimal'e Çevirme
+#----------------------------------------------------
+def get_decimal_from_dms(dms, ref):
+    """GPS verisini (Derece, Dakika, Saniye) ondalık (decimal) formata çevirir."""
+    try:
+        degrees = dms[0]
+        minutes = dms[1] / 60.0
+        seconds = dms[2] / 3600.0
+        
+        val = degrees + minutes + seconds
+        if ref in ['S', 'W']: # Güney ve Batı negatif olmalı
+            val = -val
+        return val
+    except:
+        return None
+
+#----------------------------------------------------
+# YENİ FOTOĞRAF (EXIF) ANALİZ FONKSİYONU
+#----------------------------------------------------
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        await update.message.reply_text("📸 Fotoğraf alınıyor ve EXIF verileri analiz ediliyor...")
+        
+        # En yüksek çözünürlüklü fotoğrafı al
+        file_id = update.message.photo[-1].file_id
+        photo_file = await context.bot.get_file(file_id)
+        
+        # Dosyayı diske değil, hafızaya (RAM) indir
+        f = io.BytesIO()
+        await photo_file.download_to_memory(f)
+        f.seek(0) # Hafızadaki dosyanın başına git
+        
+        # Pillow ile fotoğrafı aç
+        image = Image.open(f)
+        
+        # EXIF verilerini çek
+        exif_data_raw = image.getexif()
+
+        if not exif_data_raw:
+            await update.message.reply_text("ℹ️ Bu fotoğrafta EXIF verisi bulunamadı. (Telegram tarafından sıkıştırılırken veya gönderilirken temizlenmiş olabilir.)\n\nNot: Fotoğrafı 'Dosya olarak' göndermek daha iyi sonuç verebilir.")
+            return
+
+        # EXIF tag ID'lerini (sayıları) isimlere çevir
+        exif_data = {}
+        for tag, value in exif_data_raw.items():
+            tag_name = ExifTags.TAGS.get(tag, tag)
+            exif_data[tag_name] = value
+        
+        # Kullanıcıya göstereceğimiz mesajı oluştur
+        mesaj = "📊 **Fotoğraf Meta Veri (EXIF) Analizi**\n\n"
+        found = False
+
+        if "Make" in exif_data and exif_data["Make"]:
+            mesaj += f"Cihaz Markası: {exif_data['Make']}\n"
+            found = True
+        if "Model" in exif_data and exif_data["Model"]:
+            mesaj += f"Cihaz Modeli: {exif_data['Model']}\n"
+            found = True
+        if "DateTimeOriginal" in exif_data and exif_data["DateTimeOriginal"]:
+            mesaj += f"Çekim Tarihi: {exif_data['DateTimeOriginal']}\n"
+            found = True
+        
+        # GPS Bilgisi (En önemlisi)
+        gps_info_raw = exif_data.get("GPSInfo")
+        if gps_info_raw:
+            gps_tags = {}
+            for tag, value in gps_info_raw.items():
+                tag_name = ExifTags.GPSTAGS.get(tag, tag)
+                gps_tags[tag_name] = value
+
+            lat_dms = gps_tags.get("GPSLatitude")
+            lat_ref = gps_tags.get("GPSLatitudeRef")
+            lon_dms = gps_tags.get("GPSLongitude")
+            lon_ref = gps_tags.get("GPSLongitudeRef")
+
+            if lat_dms and lat_ref and lon_dms and lon_ref:
+                lat = get_decimal_from_dms(lat_dms, lat_ref)
+                lon = get_decimal_from_dms(lon_dms, lon_ref)
+                
+                if lat is not None and lon is not None:
+                    mesaj += f"\n📍 **GPS KONUMU BULUNDU!**\n"
+                    mesaj += f"Enlem: {lat}\n"
+                    mesaj += f"Boylam: {lon}\n"
+                    mesaj += f"Google Maps: https://www.google.com/maps/search/?api=1&query={lat},{lon})\n"
+                    found = True
+
+        if not found:
+            mesaj += "Cihaz modeli, tarih veya GPS gibi önemli bir veri bulunamadı."
+        
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
+    
+    except Exception as e:
+        print(f"EXIF Hatası: {str(e)}")
+        await update.message.reply_text(f"Bir hata oluştu: Fotoğraf işlenemedi. (Format desteklenmiyor olabilir)\nDetay: {str(e)}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --------------------------------------------
 # BU FONKSİYONUN TAMAMI EN SOLDA (GİRİNTİSİZ) OLMALI
 # --------------------------------------------
@@ -410,6 +513,7 @@ def main():
     application.add_handler(CommandHandler("email", email_sorgula))
     application.add_handler(CommandHandler("username", username_sorgula))
     application.add_handler(CommandHandler("url", url_sorgula))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
 
     print("Bot çalışıyor... (Durdurmak için CTRL+C)")
