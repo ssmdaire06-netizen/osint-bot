@@ -10,6 +10,7 @@ import json
 import sys
 import base64
 from telegram import Update, BotCommand
+from telegram.helpers import escape_markdown
 import io
 from PIL import Image, ExifTags
 from telegram.ext import MessageHandler, filters
@@ -51,10 +52,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mesaj += "🎣 `/url <https://link.com>`\n"
     mesaj += "   _URL/Link Güvenlik Kontrolü (VirusTotal)_\n\n"
 
-    mesaj += "📸 `(Bana bir fotoğraf gönderin)`\n"
+    mesaj += "📸 `(Bana bir fotoğrafı 'Dosya' olarak atın)`\n"
     mesaj += "   _Fotoğrafın gizli meta (EXIF) verilerini analiz ederim._\n\n"
-
+    
     mesaj += "Tüm komutları görmek için / tuşuna basmanız yeterli."
+
+
 
     # Görsellik (Markdown) için parse_mode'u ekliyoruz
     await update.message.reply_text(mesaj, parse_mode='Markdown')
@@ -373,96 +376,144 @@ def get_decimal_from_dms(dms, ref):
 
 #----------------------------------------------------
 # YENİ FOTOĞRAF (EXIF) ANALİZ FONKSİYONU
-#----------------------------------------------------
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text("📸 Fotoğraf alınıyor ve EXIF verileri analiz ediliyor...")
-        
-        # En yüksek çözünürlüklü fotoğrafı al
-        file_id = update.message.photo[-1].file_id
-        photo_file = await context.bot.get_file(file_id)
-        
-        # Dosyayı diske değil, hafızaya (RAM) indir
-        f = io.BytesIO()
-        await photo_file.download_to_memory(f)
-        f.seek(0) # Hafızadaki dosyanın başına git
-        
-        # Pillow ile fotoğrafı aç
-        image = Image.open(f)
-        
-        # EXIF verilerini çek
-        exif_data_raw = image.getexif()
 
-        if not exif_data_raw:
-            await update.message.reply_text("ℹ️ Bu fotoğrafta EXIF verisi bulunamadı. (Telegram tarafından sıkıştırılırken veya gönderilirken temizlenmiş olabilir.)\n\nNot: Fotoğrafı 'Dosya olarak' göndermek daha iyi sonuç verebilir.")
+#----------------------------------------------------
+# YARDIMCI: FOTOĞRAFI İŞLEYEN BLOKLAYICI FONKSİYON
+#----------------------------------------------------
+def process_exif_sync(file_bytes_io):
+    """Bu fonksiyon, botu DONDURUR, bu yüzden 'to_thread' ile çağrılmalıdır."""
+    
+    print("--- DEBUG 3: (Thread) Dosya Pillow(Image.open) ile açılıyor... ---")
+    image = Image.open(file_bytes_io)
+    
+    print("--- DEBUG 4: (Thread) Dosya açıldı. EXIF verisi çekiliyor... ---")
+    exif_data_raw = image.getexif()
+
+    if not exif_data_raw:
+        print("--- DEBUG 5.A: (Thread) EXIF Verisi Boş. ---")
+        return None, "NO_EXIF"
+
+    exif_data = {}
+    for tag, value in exif_data_raw.items():
+        tag_name = ExifTags.TAGS.get(tag, tag)
+        exif_data[tag_name] = value
+
+    mesaj_parcalari = {}
+    found = False
+
+    if "Make" in exif_data and exif_data["Make"]:
+        mesaj_parcalari["Make"] = exif_data['Make']
+        found = True
+    if "Model" in exif_data and exif_data["Model"]:
+        mesaj_parcalari["Model"] = exif_data['Model']
+        found = True
+    if "DateTimeOriginal" in exif_data and exif_data["DateTimeOriginal"]:
+        mesaj_parcalari["DateTimeOriginal"] = exif_data['DateTimeOriginal']
+        found = True
+    
+    gps_info_raw = exif_data.get("GPSInfo")
+    if gps_info_raw:
+        gps_tags = {}
+        for tag, value in gps_info_raw.items():
+            tag_name = ExifTags.GPSTAGS.get(tag, tag)
+            gps_tags[tag_name] = value
+        
+        lat_dms = gps_tags.get("GPSLatitude")
+        lat_ref = gps_tags.get("GPSLatitudeRef")
+        lon_dms = gps_tags.get("GPSLongitude")
+        lon_ref = gps_tags.get("GPSLongitudeRef")
+
+        if lat_dms and lat_ref and lon_dms and lon_ref:
+            lat = get_decimal_from_dms(lat_dms, lat_ref)
+            lon = get_decimal_from_dms(lon_dms, lon_ref)
+            if lat is not None and lon is not None:
+                mesaj_parcalari["GPSLatitude"] = lat
+                mesaj_parcalari["GPSLongitude"] = lon
+                found = True
+
+    if not found and not gps_info_raw:
+        print("--- DEBUG 5.B: (Thread) Önemli veri yok. ---")
+        return None, "NOT_FOUND"
+
+    print("--- DEBUG 5.C: (Thread) EXIF Verisi dolu. ---")
+    return mesaj_parcalari, "FOUND"
+#----------------------------------------------------
+#----------------------------------------------------
+# FOTOĞRAF/DOSYA (EXIF) ANALİZ FONKSİYONU (Donmayı Önleyen Versiyon)
+#----------------------------------------------------
+async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        print("--- DEBUG 1: 'handle_image' fonksiyonu başladı. ---")
+        await update.message.reply_text("📸 Görüntü alınıyor ve EXIF verileri analiz ediliyor...")
+        
+        file_id = None
+        file_name = "image.jpg"
+
+        if update.message.photo:
+            file_id = update.message.photo[-1].file_id
+        elif update.message.document and update.message.document.mime_type.startswith('image/'):
+            file_id = update.message.document.file_id
+            file_name = escape_markdown(update.message.document.file_name, version=2)
+        else:
+            await update.message.reply_text("Bu dosya formatı desteklenmiyor.")
             return
 
-        # EXIF tag ID'lerini (sayıları) isimlere çevir
-        exif_data = {}
-        for tag, value in exif_data_raw.items():
-            tag_name = ExifTags.TAGS.get(tag, tag)
-            exif_data[tag_name] = value
+        print(f"--- DEBUG 2: Dosya ID alındı ({file_id}). Hafızaya indiriliyor... ---")
+        photo_file = await context.bot.get_file(file_id)
+        f = io.BytesIO()
+        await photo_file.download_to_memory(f)
+        f.seek(0)
         
-        # Kullanıcıya göstereceğimiz mesajı oluştur
-        mesaj = "📊 **Fotoğraf Meta Veri (EXIF) Analizi**\n\n"
-        found = False
+        # --- YENİ BÖLÜM: Donduran kodu 'to_thread' ile çağır ---
+        print("--- DEBUG 3: Dondurucu işlem (process_exif_sync) 'to_thread' ile başlatılıyor... ---")
+        # 'to_thread' Python 3.9+ gerektirir, Kali/Railway bunu destekler
+        sonuclar, durum = await asyncio.to_thread(process_exif_sync, f)
+        print(f"--- DEBUG 4: 'to_thread' bitti. Durum: {durum} ---")
+        # --- BİTTİ ---
 
-        if "Make" in exif_data and exif_data["Make"]:
-            mesaj += f"Cihaz Markası: {exif_data['Make']}\n"
-            found = True
-        if "Model" in exif_data and exif_data["Model"]:
-            mesaj += f"Cihaz Modeli: {exif_data['Model']}\n"
-            found = True
-        if "DateTimeOriginal" in exif_data and exif_data["DateTimeOriginal"]:
-            mesaj += f"Çekim Tarihi: {exif_data['DateTimeOriginal']}\n"
-            found = True
-        
-        # GPS Bilgisi (En önemlisi)
-        gps_info_raw = exif_data.get("GPSInfo")
-        if gps_info_raw:
-            gps_tags = {}
-            for tag, value in gps_info_raw.items():
-                tag_name = ExifTags.GPSTAGS.get(tag, tag)
-                gps_tags[tag_name] = value
+        if durum == "NO_EXIF":
+            mesaj = f"ℹ️ **EXIF Verisi Bulunamadı** ({file_name})\n\n"
+            if update.message.photo:
+                mesaj += "Sebep: Resmi 'Fotoğraf olarak' gönderdiniz\. Telegram gizlilik için meta verileri siler\.\n"
+                mesaj += "**Lütfen resmi 'Dosya olarak' \(Sıkıştırılmamış\) göndermeyi deneyin\.**"
+            else:
+                mesaj += "Sebep: Bu dosyanın orijinalinde meta veri olmayabilir \(örn: WhatsApp'tan gelen, ekran görüntüsü vb\.\)\."
+            await update.message.reply_text(mesaj, parse_mode='MarkdownV2')
+            return
 
-            lat_dms = gps_tags.get("GPSLatitude")
-            lat_ref = gps_tags.get("GPSLatitudeRef")
-            lon_dms = gps_tags.get("GPSLongitude")
-            lon_ref = gps_tags.get("GPSLongitudeRef")
+        if durum == "NOT_FOUND":
+            mesaj = f"📊 **Fotoğraf Meta Veri \(EXIF\) Analizi** \({file_name}\)\n\n"
+            mesaj += "Cihaz modeli, tarih veya GPS gibi önemli bir veri bulunamadı\."
+            await update.message.reply_text(mesaj, parse_mode='MarkdownV2')
+            return
+            
+        if durum == "FOUND":
+            mesaj = f"📊 **Fotoğraf Meta Veri \(EXIF\) Analizi** \({file_name}\)\n\n"
+            if sonuclar.get("Make"):
+                mesaj += f"Cihaz Markası: {escape_markdown(sonuclar['Make'], version=2)}\n"
+            if sonuclar.get("Model"):
+                mesaj += f"Cihaz Modeli: {escape_markdown(sonuclar['Model'], version=2)}\n"
+            if sonuclar.get("DateTimeOriginal"):
+                mesaj += f"Cihaz Tarihi: {escape_markdown(sonuclar['DateTimeOriginal'], version=2)}\n"
+            
+            if sonuclar.get("GPSLatitude"):
+                lat = sonuclar["GPSLatitude"]
+                lon = sonuclar["GPSLongitude"]
+                mesaj += f"\n📍 **GPS KONUMU BULUNDU\!**\n"
+                mesaj += f"Enlem: {escape_markdown(str(lat), version=2)}\n"
+                mesaj += f"Boylam: {escape_markdown(str(lon), version=2)}\n"
+                mesaj += f"[Google Maps](http://googleusercontent.com/maps/google.com/1{lat},{lon})\n"
+            
+            await update.message.reply_text(mesaj, parse_mode='MarkdownV2')
 
-            if lat_dms and lat_ref and lon_dms and lon_ref:
-                lat = get_decimal_from_dms(lat_dms, lat_ref)
-                lon = get_decimal_from_dms(lon_dms, lon_ref)
-                
-                if lat is not None and lon is not None:
-                    mesaj += f"\n📍 **GPS KONUMU BULUNDU!**\n"
-                    mesaj += f"Enlem: {lat}\n"
-                    mesaj += f"Boylam: {lon}\n"
-                    mesaj += f"Google Maps: https://www.google.com/maps/search/?api=1&query={lat},{lon})\n"
-                    found = True
-
-        if not found:
-            mesaj += "Cihaz modeli, tarih veya GPS gibi önemli bir veri bulunamadı."
-        
-        await update.message.reply_text(mesaj, parse_mode='Markdown')
-    
     except Exception as e:
-        print(f"EXIF Hatası: {str(e)}")
-        await update.message.reply_text(f"Bir hata oluştu: Fotoğraf işlenemedi. (Format desteklenmiyor olabilir)\nDetay: {str(e)}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        print(f"\n\n!!!! HATA YAKALANDI (handle_image) !!!!")
+        print(f"HATA TÜRÜ: {type(e)}")
+        print(f"HATA MESAJI: {str(e)}")
+        print("!!!! ---------------------------- !!!!\n\n")
+        
+        error_message = escape_markdown(str(e), version=2)
+        await update.message.reply_text(f"Bir hata oluştu: Fotoğraf işlenemedi\. \(Format desteklenmiyor veya dosya bozuk\)\nDetay: {error_message}", parse_mode='MarkdownV2')
 
 
 # --------------------------------------------
@@ -513,7 +564,8 @@ def main():
     application.add_handler(CommandHandler("email", email_sorgula))
     application.add_handler(CommandHandler("username", username_sorgula))
     application.add_handler(CommandHandler("url", url_sorgula))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_image))
+    application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
 
 
     print("Bot çalışıyor... (Durdurmak için CTRL+C)")
