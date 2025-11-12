@@ -17,8 +17,44 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 IPINFO_API_TOKEN = os.environ.get("IPINFO_API_TOKEN")
 VT_API_TOKEN = os.environ.get("VT_API_TOKEN")
 
+
+
+#----------------------------------------------------
+# YENİ VE ETKİLEYİCİ START KOMUTU
+#----------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Merhaba! Ben OSINT botuyum. /ip <adres> komutu ile sorgulama yapabilirsiniz.")
+    # Kullanıcının adını alarak onu selamlayalım
+    user_name = update.effective_user.first_name
+    
+    mesaj = f"Selam {user_name}! 🚀 Ben sizin kişisel OSINT (Açık Kaynak İstihbarat) asistanınızım.\n\n"
+    mesaj += "Dijital dünyadaki izleri takip etmenize yardımcı olmak için buradayım.\n\n"
+    mesaj += "**İşte yapabileceklerim:**\n\n"
+    
+    mesaj += "📍 `/ip <IP Adresi>`\n"
+    mesaj += "   _IP Adresi Analizi (Konum, ISP, vb.)_\n\n"
+    
+    mesaj += "🌐 `/domain <domain.com>`\n"
+    mesaj += "   _Domain Bilgileri (Whois & DNS Kayıtları)_\n\n"
+    
+    mesaj += "📧 `/email <e-posta@adres.com>`\n"
+    mesaj += "   _E-posta Analizi (Hangi sitelere kayıtlı?)_\n\n"
+    
+    mesaj += "🧑‍💻 `/username <kullaniciadi>`\n"
+    mesaj += "   _Kullanıcı Adı Arama (Sosyal Medya vb.)_\n\n"
+    
+    mesaj += "🗄️ `/ara <terim>`\n"
+    mesaj += "   _Özel Veritabanı Sorgulama (İsim, Tel, vb.)_\n\n"
+    
+    mesaj += "🎣 `/url <https://link.com>`\n"
+    mesaj += "   _URL/Link Güvenlik Kontrolü (VirusTotal)_\n\n"
+    
+    mesaj += "Tüm komutları görmek için / tuşuna basmanız yeterli."
+
+    # Görsellik (Markdown) için parse_mode'u ekliyoruz
+    await update.message.reply_text(mesaj, parse_mode='Markdown')
+
+
+
 
 async def ip_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -332,22 +368,35 @@ async def url_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application: Application):
     """Bot başladığında komut menüsünü ayarlar."""
     
-    # BU SATIR 4 BOŞLUK İÇERİDE
+    # Yeni ve daha açıklayıcı komut listesi
     commands = [
-        BotCommand("start", "Botu başlatır ve merhaba der"),
-        BotCommand("ip", "IP adresi sorgular (Örn: /ip 8.8.8.8)"),
-        BotCommand("domain", "Domain sorgular (Örn: /domain google.com)"),
-        BotCommand("email", "Email ile hesap arar (Örn: /email test@test.com)"),
-        BotCommand("username", "Kullanıcı adı arar (Örn: /username test)"),
-        BotCommand("ara", "Özel veritabanında arama yapar (Örn: /ara Ahmet)"),
-        BotCommand("url", "URL'yi VirusTotal'da tarar (Örn: /url site.com)")
+        BotCommand("start", "👋 Botu başlatır ve komutları listeler."),
+        BotCommand("ip", "📍 IP Adresi Analizi (Konum, ISP, vb.)"),
+        BotCommand("domain", "🌐 Domain Bilgileri (Whois & DNS Kayıtları)"),
+        BotCommand("email", "📧 E-posta Analizi (Hangi sitelere kayıtlı?)"),
+        BotCommand("username", "🧑‍💻 Kullanıcı Adı Arama (Sosyal Medya vb.)"),
+        BotCommand("ara", "🗄️ Özel Veritabanı Sorgulama (İsim, Tel, vb.)"),
+        BotCommand("url", "🎣 URL/Link Güvenlik Kontrolü (VirusTotal)")
     ]
     
-    # BU SATIR DA 4 BOŞLUK İÇERİDE VE 'commands' İLE AYNI HİZADA OLMALI
     await application.bot.set_my_commands(commands)
+
+
+
+
+
+
+
+
+
+
 # --------------------------------------------
 # BU FONKSİYON DA EN SOLDA (GİRİNTİSİZ) OLMALI
 # --------------------------------------------
+
+
+
+
 def main():
     # BU SATIRLAR 4 BOŞLUK İÇERİDE
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
