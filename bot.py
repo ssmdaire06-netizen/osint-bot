@@ -516,6 +516,88 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Bir hata oluştu: Fotoğraf işlenemedi\. \(Format desteklenmiyor veya dosya bozuk\)\nDetay: {error_message}", parse_mode='MarkdownV2')
 
 
+
+
+#----------------------------------------------------
+#----------------------------------------------------
+# GÜNCELLENMİŞ JSON ARAMA FONKSİYONU (adi, soyadi, gsm)
+#----------------------------------------------------
+async def ara_json(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        arama_terimi = " ".join(context.args).lower()
+        if not arama_terimi:
+            raise IndexError("Arama terimi girilmedi")
+
+        await update.message.reply_text(f"🔍 '{arama_terimi}' veritabanında aranıyor...")
+
+        dosya_adi = 'veritabani.json'
+
+        with open(dosya_adi, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+
+        sonuclar = []
+        # 'data' bir liste olmalı ([{...}, {...}])
+        for kayit in data:
+            bulundu = False
+
+            # Değerleri (varsa) al ve string'e (metne) çevir
+            adi = str(kayit.get("adi", "")).lower()
+            soyadi = str(kayit.get("soyadi", "")).lower()
+            gsm = str(kayit.get("gsm", "")).lower()
+            cihaz = str(kayit.get("cihaz", "")).lower()
+
+            # Tam isim araması için 'adi' ve 'soyadi' birleştir
+            tam_isim = (adi + " " + soyadi).strip()
+
+            # GÜNCELLENMİŞ ARAMA MANTIĞI
+            if (arama_terimi in tam_isim) or \
+               (arama_terimi in gsm) or \
+               (arama_terimi in cihaz):
+                bulundu = True
+
+            if bulundu:
+                # GÜNCELLENMİŞ ÇIKTI FORMATLAMA
+                kayit_str = f"--- BULUNAN KAYIT ---\n"
+
+                # 'adi' veya 'soyadi' varsa birleştirip yaz
+                if kayit.get("adi") or kayit.get("soyadi"):
+                     kayit_str += f"İsim: {kayit.get('adi', '')} {kayit.get('soyadi', '')}\n".strip()
+
+                if kayit.get("gsm"):
+                    kayit_str += f"\nGsm: {kayit.get('gsm')}"
+
+                if kayit.get("cihaz"):
+                    kayit_str += f"\nCihaz: {kayit.get('cihaz')}"
+
+                sonuclar.append(kayit_str)
+
+        if sonuclar:
+            mesaj = f"✅ **'{arama_terimi}' için {len(sonuclar)} sonuç bulundu:**\n\n"
+            mesaj += "\n\n".join(sonuclar) # Kayıtlar arası boşluk için \n\n
+        else:
+            mesaj = f"ℹ️ **Sonuç Bulunamadı**\n\n`{arama_terimi}` terimi '{dosya_adi}' içinde bulunamadı."
+
+        if len(mesaj) > 4096:
+            mesaj = f"✅ **Çok fazla sonuç bulundu!** (Toplam {len(sonuclar)} adet). Mesaj limitini aşmamak için ilk 10 sonuç gösteriliyor:\n\n" + "\n\n".join(sonuclar[:10])
+
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
+
+    except FileNotFoundError:
+        await update.message.reply_text(f"Hata: '{dosya_adi}' dosyası sunucuda bulunamadı.")
+    except json.JSONDecodeError:
+        await update.message.reply_text(f"Hata: '{dosya_adi}' dosyasının formatı bozuk (Geçerli bir JSON değil). Lütfen tırnak ve virgülleri kontrol edin.")
+    except IndexError:
+        await update.message.reply_text("Kullanım: /ara <aranacak isim, telefon, cihaz vb.>")
+    except Exception as e:
+        print(f"JSON Arama Hatası: {str(e)}")
+        await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
+
+
+
+
+
+
+
 # --------------------------------------------
 # BU FONKSİYONUN TAMAMI EN SOLDA (GİRİNTİSİZ) OLMALI
 # --------------------------------------------
@@ -533,7 +615,8 @@ async def post_init(application: Application):
         BotCommand("email", "📧 E-posta Analizi (Hangi sitelere kayıtlı?)"),
         BotCommand("username", "🧑‍💻 Kullanıcı Adı Arama (Sosyal Medya vb.)"),
         BotCommand("ara", "🗄️ Özel Veritabanı Sorgulama (İsim, Tel, vb.)"),
-        BotCommand("url", "🎣 URL/Link Güvenlik Kontrolü (VirusTotal)")
+        BotCommand("url", "🎣 URL/Link Güvenlik Kontrolü (VirusTotal)"),
+	BotCommand("ara", "🗄️ Özel Veritabanı Sorgulama (JSON)")
     ]
     
     await application.bot.set_my_commands(commands)
@@ -566,8 +649,7 @@ def main():
     application.add_handler(CommandHandler("url", url_sorgula))
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
-
-
+    application.add_handler(CommandHandler("ara", ara_json))
     print("Bot çalışıyor... (Durdurmak için CTRL+C)")
     application.run_polling()
 
