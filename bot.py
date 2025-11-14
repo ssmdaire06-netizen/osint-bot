@@ -15,7 +15,7 @@ import base64
 import io
 
 # Telegram Kütüphaneleri
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand
 from telegram.helpers import escape_markdown
 from telegram.ext import (
     Application,
@@ -123,57 +123,47 @@ def process_exif_sync(file_bytes_io):
 # --------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/start komutu: Kullanıcıyı butonlu bir menü ile karşılar."""
+    """/start komutu: Kullanıcıyı statik yardım menüsüyle karşılar."""
     user_name = update.effective_user.first_name
     
+    # --- YENİ KARŞILAMA METNİ (SİZİN İSTEDİĞİNİZ GİBİ) ---
     mesaj = f"Selam {user_name}! 🚀 Kişisel OSINT asistanınıza hoş geldiniz.\n\n"
-    mesaj += "Sorgulamak istediğiniz komutu seçin. Butona bastığınızda, komut metin kutunuza otomatik olarak yazılacaktır. Yanına hedefi (IP, domain vb.) eklemeniz yeterli.\n\n"
-    mesaj += "**BÖLÜM 1: SİTE VE SUNUCU TARAMA**\n"
-
-    keyboard = [
-        # --- Bölüm 1: Site Tarama (Sizin istediğiniz sıra) ---
-        [
-            InlineKeyboardButton("🎣 URL Güvenlik Kontrolü", switch_inline_query_current_chat="/url "),
-            InlineKeyboardButton("🌐 Domain Analizi", switch_inline_query_current_chat="/domain ")
-        ],
-        [
-            InlineKeyboardButton("📍 IP Analizi", switch_inline_query_current_chat="/ip "),
-            InlineKeyboardButton("🔌 Port Tarama (Shodan)", switch_inline_query_current_chat="/shodan ")
-        ],
-        # --- Bölüm 2: Arama ---
-        [
-            InlineKeyboardButton("🗄️ Özel Veritabanı Ara", switch_inline_query_current_chat="/ara "),
-            InlineKeyboardButton("📧 E-posta Analizi", switch_inline_query_current_chat="/email ")
-        ],
-        [
-            InlineKeyboardButton("📸 Fotoğraf EXIF Analizi (Nasıl Yapılır?)", callback_data="info_exif")
-        ]
-    ]
+    mesaj += "İşte yapabileceklerim:\n\n"
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    mesaj += "🎣 `/url <https://link.com>`\n"
+    mesaj += "   _URL/Link Güvenlik Kontrolü (VirusTotal)_\n\n"
+    
+    mesaj += "🌐 `/domain <domain.com>`\n"
+    mesaj += "   _Domain Bilgileri (Whois & DNS Kayıtları)_\n\n"
+    
+    mesaj += "📍 `/ip <IP Adresi>`\n"
+    mesaj += "   _IP Adresi Analizi (Konum, ISP, vb.)_\n\n"
+    
+    mesaj += "🔌 `/shodan <IP Adresi>`\n"
+    mesaj += "   _Pasif Port Tarama (Shodan Servisleri)_\n\n"
+    
+    mesaj += "🗄️ `/ara <terim>`\n"
+    mesaj += "   _Özel Veritabanı Sorgulama (JSON)_\n\n"
 
-    # Mesajı butonlarla birlikte gönder
-    await update.message.reply_text(mesaj, reply_markup=reply_markup, parse_mode='Markdown')
+    mesaj += "📧 `/email <e-posta@adres.com>`\n"
+    mesaj += "   _E-posta Analizi (Hangi sitelere kayıtlı?)_\n\n"
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Butonlardan gelen geri aramaları yönetir (Örn: EXIF butonu)"""
-    query = update.callback_query
-    await query.answer() # Butona basıldığını onayla
+    mesaj += "📸 `(Bana bir fotoğrafı 'Dosya' olarak atın)`\n"
+    mesaj += "   _Fotoğrafın gizli meta (EXIF) verilerini analiz ederim._\n\n"
+    
+    mesaj += "Bir komutun kullanımı hakkında detaylı bilgi için, o komutu tek başına yazın (örn: `/ip` yazıp gönderin)."
+    
+    # Artık buton (ReplyMarkup) göndermiyoruz
+    await update.message.reply_text(mesaj, parse_mode='Markdown')
 
-    if query.data == 'info_exif':
-        await query.edit_message_text(
-            text="📸 **Fotoğraf (EXIF) Analizi Nasıl Çalışır?**\n\n"
-                 "Bu komutu kullanmak için bana metin yazmayın.\n\n"
-                 "İçindeki gizli verileri (GPS, Cihaz Modeli, Tarih) görmek istediğiniz fotoğrafı, "
-                 "Telegram üzerinden **'Dosya Olarak' (Ataç Simgesi 📎 -> Dosya)** gönderin.\n\n"
-                 "_(Not: Normal 'Fotoğraf olarak' gönderirseniz, Telegram gizlilik için tüm verileri siler.)_",
-            parse_mode='Markdown'
-        )
 
 async def ip_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/ip komutu: IP Adresi Analizi (IPinfo)"""
     try:
+        # Komutla birlikte argüman (IP) gelip gelmediğini kontrol et
         ip_adresi = context.args[0]
+        
+        # --- (Mevcut kodunuz devam ediyor) ---
         api_url = f"https://ipinfo.io/{ip_adresi}/json?token={IPINFO_API_TOKEN}"
         
         response = requests.get(api_url)
@@ -194,7 +184,15 @@ async def ip_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"API hatası: {response.status_code}")
             
     except IndexError:
-        await update.message.reply_text("Kullanım: /ip <IP_ADRESİ>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        # Eğer /ip tek başına yazılırsa (argüman yoksa) burası çalışır
+        mesaj = (
+            "📍 **IP Analizi Komutu**\n\n"
+            "Bu komut, bir IP adresinin coğrafi konumunu, sahibini (ISP) ve koordinatlarını sorgular.\n\n"
+            "**Kullanım:**\n`/ip <IP_ADRESİ>`\n\n"
+            "**Örnek:**\n`/ip 8.8.8.8`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"Bir hata oluştu: {str(e)}")
 
@@ -205,7 +203,6 @@ async def domain_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         domain_adi = context.args[0]
         await update.message.reply_text(f"🔍 {domain_adi} için bilgiler sorgulanıyor... Lütfen bekleyin.")
 
-        # --- BÖLÜM 1: WHOIS SORGUSU ---
         whois_mesaj = "--- WHOIS BİLGİSİ ---\n"
         try:
             w = whois.whois(domain_adi)
@@ -229,7 +226,6 @@ async def domain_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             whois_mesaj += f"Whois bilgisi alınamadı. (Domain gizli veya bulunamadı)\n"
 
-        # --- BÖLÜM 2: DNS SORGUSU (Google API) ---
         dns_mesaj = "\n--- DNS KAYITLARI ---\n"
         try:
             a_response = requests.get(f"https://dns.google/resolve?name={domain_adi}&type=A")
@@ -258,7 +254,14 @@ async def domain_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /domain <domain.com>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        mesaj = (
+            "🌐 **Domain Analizi Komutu**\n\n"
+            "Bu komut, bir alan adının sahibini (Whois) ve teknik (DNS) kayıtlarını gösterir.\n\n"
+            "**Kullanım:**\n`/domain <domain.com>`\n\n"
+            "**Örnek:**\n`/domain btk.gov.tr`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
 
@@ -302,7 +305,14 @@ async def email_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /email <email@adres.com>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        mesaj = (
+            "📧 **E-posta Analizi Komutu**\n\n"
+            "Bu komut, bir e-posta adresinin hangi popüler sitelere (Instagram, Spotify vb.) kayıtlı olduğunu bulur.\n\n"
+            "**Kullanım:**\n`/email <email@adres.com>`\n\n"
+            "**Örnek:**\n`/email test@example.com`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         print(f"holehe genel hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -366,7 +376,14 @@ async def url_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /url <https://ornek.com>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        mesaj = (
+            "🎣 **URL Güvenlik Kontrolü (VirusTotal)**\n\n"
+            "Bir web sitesinin (URL) güvenli olup olmadığını 70+ antivirüs motorunda tarar.\n\n"
+            "**Kullanım:**\n`/url <https://ornek.com>`\n\n"
+            "**Örnek:**\n`/url google.com`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         print(f"URL Sorgulama Hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -506,7 +523,14 @@ async def ara_json(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except json.JSONDecodeError:
         await update.message.reply_text(f"Hata: '{dosya_adi}' dosyasının formatı bozuk (Geçerli bir JSON değil). Lütfen tırnak ve virgülleri kontrol edin.")
     except IndexError:
-        await update.message.reply_text("Kullanım: /ara <aranacak isim, telefon, cihaz vb.>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        mesaj = (
+            "🗄️ **Özel Veritabanı Arama Komutu**\n\n"
+            "Bu komut, `Turkey.json` dosyanızda 'İsim', 'Gsm' veya 'Cihaz' bilgisi arar.\n\n"
+            "**Kullanım:**\n`/ara <Aranacak Terim>`\n\n"
+            "**Örnekler:**\n`/ara Ahmet Yılmaz`\n`/ara 5551234455`\n`/ara iPhone 14`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         print(f"JSON Arama Hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -555,7 +579,14 @@ async def shodan_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj, parse_mode='Markdown')
 
     except IndexError:
-        await update.message.reply_text("Kullanım: /shodan <IP Adresi>")
+        # --- YENİ DETAYLI YARDIM MESAJI ---
+        mesaj = (
+            "🔌 **Port Tarama (Shodan) Komutu**\n\n"
+            "Bu komut, bir IP adresindeki açık portları ve o portlarda çalışan servisleri (örn: web sunucusu, veritabanı) pasif olarak tarar.\n\n"
+            "**Kullanım:**\n`/shodan <IP_ADRESİ>`\n\n"
+            "**Örnek:**\n`/shodan 1.1.1.1`"
+        )
+        await update.message.reply_text(mesaj, parse_mode='Markdown')
     except Exception as e:
         print(f"Shodan Hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
@@ -569,7 +600,7 @@ async def post_init(application: Application):
     """Bot başladığında komut menüsünü (/) ayarlar."""
     
     commands = [
-        BotCommand("start", "👋 Botu başlatır ve komutları listeler."),
+        BotCommand("start", "👋 Ana menüyü ve komut listesini gösterir."),
         
         # --- Bölüm 1: Site Tarama ---
         BotCommand("url", "🎣 URL/Link Güvenlik Kontrolü (VirusTotal)"),
@@ -590,7 +621,7 @@ def main():
     
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).post_init(post_init).build()
 
-    # Komutları ekle
+    # --- BÖLÜM 1: / (SLASH) KOMUTLARI ---
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("ip", ip_sorgula))
     application.add_handler(CommandHandler("domain", domain_sorgula))
@@ -599,10 +630,12 @@ def main():
     application.add_handler(CommandHandler("shodan", shodan_sorgula))
     application.add_handler(CommandHandler("ara", ara_json))
     
-    # Komut olmayan mesajları (Fotoğraf, Dosya, Buton) yakalayan handler'lar
+    # --- BÖLÜM 2: BUTON VEYA DOSYA YAKALAYICILAR ---
+    
+    # /start komutundaki 'inline' butonlarını yakalar    
+    # Fotoğraf ve Dosya olarak gönderilen resimleri yakalar
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
     application.add_handler(MessageHandler(filters.Document.IMAGE, handle_image))
-    application.add_handler(CallbackQueryHandler(button_handler))
     
     print("Bot çalışıyor... (Durdurmak için CTRL+C)")
     application.run_polling()
