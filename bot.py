@@ -30,7 +30,6 @@ from telegram.ext import (
 from PIL import Image, ExifTags
 
 # API Kütüphaneleri
-from shodan import Shodan
 
 
 # --------------------------------------------------
@@ -39,7 +38,6 @@ from shodan import Shodan
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 IPINFO_API_TOKEN = os.environ.get("IPINFO_API_TOKEN")
 VT_API_TOKEN = os.environ.get("VT_API_TOKEN")
-SHODAN_API_KEY = os.environ.get("SHODAN_API_KEY")
 
 
 # --------------------------------------------------
@@ -535,63 +533,6 @@ async def ara_json(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"JSON Arama Hatası: {str(e)}")
         await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
 
-
-async def shodan_sorgula(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """/shodan komutu: Pasif Port Tarama (Shodan)"""
-    try:
-        ip_adresi = context.args[0]
-        
-        if not SHODAN_API_KEY:
-            await update.message.reply_text("Hata: Sunucu tarafında SHODAN_API_KEY ayarlanmamış.")
-            return
-
-        await update.message.reply_text(f"🔍 {ip_adresi} için Shodan pasif port taraması yapılıyor...")
-
-        mesaj = f"**Shodan Raporu ({ip_adresi})**\n\n"
-        
-        try:
-            api = Shodan(SHODAN_API_KEY)
-            
-            print("--- DEBUG: Shodan sorgusu 'to_thread' ile başlatılıyor... ---")
-            host_info = await asyncio.to_thread(api.host, ip_adresi)
-            print("--- DEBUG: Shodan sorgusu tamamlandı. ---")
-            
-            ports = host_info.get("ports", [])
-            if not ports:
-                mesaj += "ℹ️ Bu IP için bilinen açık port/servis bulunamadı."
-                await update.message.reply_text(mesaj, parse_mode='Markdown')
-                return
-
-            mesaj += "Bulunan açık portlar:\n```\n"
-            mesaj += ", ".join(map(str, ports)) # Portları tek satırda göster
-            mesaj += "\n```\n\n"
-            
-            mesaj += "Detaylı Servis Bilgileri:\n"
-            for item in host_info.get("data", []):
-                port = item.get('port', 'N/A')
-                service = item.get('product', 'Bilinmiyor')
-                transport = item.get('transport', 'tcp') # tcp/udp
-                mesaj += f"Port {port}/{transport}: {service}\n"
-
-        except Exception as api_error:
-            mesaj = f"API Hatası: {str(api_error)}"
-
-        await update.message.reply_text(mesaj, parse_mode='Markdown')
-
-    except IndexError:
-        # --- YENİ DETAYLI YARDIM MESAJI ---
-        mesaj = (
-            "🔌 **Port Tarama (Shodan) Komutu**\n\n"
-            "Bu komut, bir IP adresindeki açık portları ve o portlarda çalışan servisleri (örn: web sunucusu, veritabanı) pasif olarak tarar.\n\n"
-            "**Kullanım:**\n`/shodan <IP_ADRESİ>`\n\n"
-            "**Örnek:**\n`/shodan 1.1.1.1`"
-        )
-        await update.message.reply_text(mesaj, parse_mode='Markdown')
-    except Exception as e:
-        print(f"Shodan Hatası: {str(e)}")
-        await update.message.reply_text(f"Genel bir hata oluştu: {str(e)}")
-
-
 #----------------------------------------------------
 # BOT AYARLARI VE BAŞLATMA
 #----------------------------------------------------
@@ -606,7 +547,6 @@ async def post_init(application: Application):
         BotCommand("url", "🎣 URL/Link Güvenlik Kontrolü (VirusTotal)"),
         BotCommand("domain", "🌐 Domain Bilgileri (Whois & DNS Kayıtları)"),
         BotCommand("ip", "📍 IP Adresi Analizi (Konum, ISP, vb.)"),
-        BotCommand("shodan", "🔌 Pasif Port Tarama (Shodan)"),
 
         # --- Bölüm 2: Arama ---
         BotCommand("ara", "🗄️ Özel Veritabanı Sorgulama (JSON)"),
@@ -627,7 +567,6 @@ def main():
     application.add_handler(CommandHandler("domain", domain_sorgula))
     application.add_handler(CommandHandler("email", email_sorgula))
     application.add_handler(CommandHandler("url", url_sorgula))
-    application.add_handler(CommandHandler("shodan", shodan_sorgula))
     application.add_handler(CommandHandler("ara", ara_json))
     
     # --- BÖLÜM 2: BUTON VEYA DOSYA YAKALAYICILAR ---
